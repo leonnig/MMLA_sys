@@ -16,6 +16,11 @@ Modular design facilitates multi-device and multi-user scalability
 ## Installation
 - Clone the repository
 - Set up a Python virtual environment
+
+```shell
+py -3.11 -m venv my_venv
+```
+
 - Install required packages via
 
 ```shell
