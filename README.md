@@ -36,7 +36,7 @@ Run the main detection scripts and launch the Flask dashboard
 Run media_eye_tracking.py to start multimodal data collection
 
 ```python
-python media_eye_tracking.py
+python mmla.py
 ```
 
 Launch the Flask web server using python app.py
