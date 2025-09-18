@@ -27,7 +27,16 @@ py -3.11 -m venv my_venv
 pip install -r requirements.txt
 ```
 
-Connect your webcam for eye tracking
+then install torch
+```shell
+pip3 install torch torchvision
+```
+and install yolo
+```shell
+pip install ultralytics  
+```
+
+Connect your webcam for eye tracking and image detecting
 
 Run the main detection scripts and launch the Flask dashboard
 
