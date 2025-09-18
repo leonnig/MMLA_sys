@@ -40,13 +40,22 @@ LEFT_EYE_RIGHT_CORNER = 133
 RIGHT_EYE_LEFT_CORNER = 362
 RIGHT_EYE_RIGHT_CORNER = 263
 
+def calculate_iris_center(face_landmarks, w, h, iris_points):
+    xs = [face_landmarks.landmark[p].x * w for p in iris_points]
+    ys = [face_landmarks.landmark[p].y * h for p in iris_points]
+    center_x = sum(xs) / len(xs)
+    center_y = sum(ys) / len(ys)
+    return center_x, center_y
+
 def eye_gaze_tracking():
-    last_send = 0 #record last send time
+    last_send = 0 # record last send time
     N = 2 # set send interval
 
+    LEFT_IRIS_POINTS = [468, 469, 470, 471, 472]
+    RIGHT_IRIS_POINTS = [473, 474, 475, 476, 477, 478, 479]  # 如果需要也可用右眼
+    
     while cap.isOpened():
         success, image = cap.read()
-        
         if not success:
             print("Detect eye failed. Please check your camera.")
             break
@@ -75,44 +84,40 @@ def eye_gaze_tracking():
                     y = int(face_landmarks.landmark[idx].y * h)
                     cv2.circle(image, (x, y), 2, (0, 255, 0), -1)
 
-                for idx in [LEFT_IRIS, LEFT_EYE_LEFT_CORNER, LEFT_EYE_RIGHT_CORNER]:
+                # draw iris points for left eye
+                for idx in LEFT_IRIS_POINTS + [LEFT_EYE_LEFT_CORNER, LEFT_EYE_RIGHT_CORNER]:
                     cx = int(face_landmarks.landmark[idx].x * w)
                     cy = int(face_landmarks.landmark[idx].y * h)
-                    cv2.circle(image, (cx, cy), 3, (0, 0, 255), -1)  # red point for iris and eye corners
-
-            
-                left_iris_x = face_landmarks.landmark[468].x * w
-                left_eye_left_x = face_landmarks.landmark[33].x * w
-                left_eye_right_x = face_landmarks.landmark[133].x * w
+                    cv2.circle(image, (cx, cy), 3, (0, 0, 255), -1)
+                
+                # calculate iris center with multiple points
+                left_iris_center_x, _ = calculate_iris_center(face_landmarks, w, h, LEFT_IRIS_POINTS)
+                left_eye_left_x = face_landmarks.landmark[LEFT_EYE_LEFT_CORNER].x * w
+                left_eye_right_x = face_landmarks.landmark[LEFT_EYE_RIGHT_CORNER].x * w
 
                 eye_width = left_eye_right_x - left_eye_left_x
-                iris_offset = left_iris_x - left_eye_left_x
+                iris_offset = left_iris_center_x - left_eye_left_x
 
-                # rate the gaze direction
-                ratio = iris_offset / eye_width  
+                ratio = iris_offset / eye_width
 
-                if ratio < 0.35:
+                if ratio < 0.47:
                     gaze = "Left"
-                elif ratio > 0.65:
+                elif ratio > 0.53:
                     gaze = "Right"
                 else:
                     gaze = "Center"
 
-                # show
                 cv2.putText(image, f"Gaze: {gaze}", (10, 60),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
 
         end = time.time()
-        if end - start != 0:
-            fps = 1 / (end - start)
-        else:
-            fps = 0
+        fps = 1 / (end - start) if (end - start) != 0 else 0
 
         now = time.time()
         if now - last_send >= N:
             send_gaze_data(gaze, 1)
             last_send = now
- 
+
         cv2.putText(image, f"FPS: {fps:.1f}", (10, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
 
