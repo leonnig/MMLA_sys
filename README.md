@@ -21,17 +21,26 @@ Modular design facilitates multi-device and multi-user scalability
 py -3.11 -m venv my_venv
 ```
 
+- Activate virtual environment
+
+```shell
+.\mmla\Scripts\activate
+```
+
 - Install required packages via
 
 ```shell
 pip install -r requirements.txt
 ```
 
-then install torch
+- Install torch
+
 ```shell
 pip3 install torch torchvision
 ```
-and install yolo
+
+- Install yolo
+  
 ```shell
 pip install ultralytics  
 ```
