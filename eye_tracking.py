@@ -2,6 +2,7 @@ import cv2
 import mediapipe as mp
 import time
 import requests
+import behavior_analysis
 
 SERVER_URL = "http://127.0.0.1:5000/api/upload"  
 
@@ -48,8 +49,6 @@ def calculate_iris_center(face_landmarks, w, h, iris_points):
     return center_x, center_y
 
 def eye_gaze_tracking():
-    last_send = 0 # record last send time
-    N = 2 # set send interval
 
     LEFT_IRIS_POINTS = [468, 469, 470, 471, 472]
     RIGHT_IRIS_POINTS = [473, 474, 475, 476, 477, 478, 479]  # 如果需要也可用右眼
@@ -61,12 +60,13 @@ def eye_gaze_tracking():
             break
 
         start = time.time()
-
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         results = face_mesh.process(image)
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-
         h, w, _ = image.shape
+
+        # 預設狀態為 "NoFace"
+        gaze = "NoFace"
         
         if results.multi_face_landmarks:
             for face_landmarks in results.multi_face_landmarks:
@@ -96,28 +96,24 @@ def eye_gaze_tracking():
                 left_eye_right_x = face_landmarks.landmark[LEFT_EYE_RIGHT_CORNER].x * w
 
                 eye_width = left_eye_right_x - left_eye_left_x
-                iris_offset = left_iris_center_x - left_eye_left_x
-
-                ratio = iris_offset / eye_width
-
-                if ratio < 0.47:
-                    gaze = "Left"
-                elif ratio > 0.53:
-                    gaze = "Right"
-                else:
-                    gaze = "Center"
-
-                cv2.putText(image, f"Gaze: {gaze}", (10, 60),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+                if eye_width != 0:
+                    iris_offset = left_iris_center_x - left_eye_left_x
+                    ratio = iris_offset / eye_width
+                    if ratio < 0.47:
+                        gaze = "Left"
+                    elif ratio > 0.53:
+                        gaze = "Right"
+                    else:
+                        gaze = "Center"
+        # *** 核心修改：更新中央狀態，而不是直接發送請求 ***
+        behavior_analysis.update_state("gaze", gaze)
 
         end = time.time()
         fps = 1 / (end - start) if (end - start) != 0 else 0
 
-        now = time.time()
-        if now - last_send >= N:
-            send_gaze_data(gaze, 1)
-            last_send = now
 
+        cv2.putText(image, f"Gaze: {gaze}", (10, 60),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
         cv2.putText(image, f"FPS: {fps:.1f}", (10, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
 

@@ -1,5 +1,6 @@
 from ultralytics import YOLO
 import cv2
+import behavior_analysis
 
 model = YOLO('yolo11n.pt')
 
@@ -24,6 +25,7 @@ def is_collision(boxA, boxB):
 def image_detection():
     global frame_count
     global previous_results
+
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
@@ -35,6 +37,8 @@ def image_detection():
             # predict return results list; we only process the first result
             results = model.predict(frame, imgsz=640, conf=0.25, verbose=False)[0]
             previous_results = results
+        
+        hand_contact_status = "Idle" # 預設為未接觸
 
         learning = False
         if previous_results is not None:
@@ -45,6 +49,7 @@ def image_detection():
 
             hands = []
             targets = []
+
             for i, name in enumerate(names):
                 if name in HAND_OBJECTS:
                     hands.append((boxes[i], confidences[i], name))
@@ -55,10 +60,18 @@ def image_detection():
             for hand_box, hand_conf, hand_name in hands:
                 for target_box, target_conf, target_name in targets:
                     if is_collision(hand_box, target_box):
+                        hand_contact_status = target_name # 更新接觸狀態為物件名稱
+                        break
                         learning = True
                         break
+                if hand_contact_status != "Idle":
+                    break
                 if learning:
                     break
+
+             # *** 核心修改：更新中央狀態 ***
+            behavior_analysis.update_state("hand_contact", hand_contact_status)
+            
             # Draw bounding boxes and labels
             for i, (box, conf, name) in enumerate([(boxes[i], confidences[i], names[i]) for i in range(len(names))]):
                 x1, y1, x2, y2 = map(int, box)
