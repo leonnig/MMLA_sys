@@ -1,9 +1,11 @@
 # Multimodal Learning Monitoring and Analytics System (MMLA)
 
-This project is a prototype system for real-time multimodal learning behavior monitoring. It integrates eye-tracking (via MediaPipe), speech recognition, keyboard and mouse activity tracking to provide a comprehensive dashboard for analyzing learner engagement and interactions.
+This project is a prototype system for real-time multimodal learning behavior monitoring. It integrates eye-tracking (via MediaPipe), image detection, speech recognition, keyboard and mouse activity tracking to provide a comprehensive dashboard for analyzing learner engagement and interactions.
 
 ## Features
 Real-time eye gaze estimation using MediaPipe Face Mesh
+
+Object detection using yolo11 do image recognition
 
 Keyboard and mouse activity logging
 
@@ -45,13 +47,13 @@ pip3 install torch torchvision
 pip install ultralytics  
 ```
 
-Connect your webcam for eye tracking and image detecting
+Connect your webcam(you need two) for eye tracking and image detecting
 
 Run the main detection scripts and launch the Flask dashboard
 
 ## Usage
 
-Run media_eye_tracking.py to start multimodal data collection
+Run mmla.py to start multimodal data collection
 
 ```python
 python mmla.py
