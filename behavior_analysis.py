@@ -3,6 +3,10 @@
 
 import time
 import requests
+from collections import deque
+import collections
+from datetime import datetime
+import csv
 
 #SERVER_URL = "http://127.0.0.1:5000/api/behavior" # 假設這是接收行為分析結果的 API
 
@@ -16,6 +20,11 @@ current_state = {
     "last_keyboard_time": time.time(), # 最後一次鍵盤活動時間
     "last_mouse_move_time": time.time(), # 最後一次滑鼠移動時間
 }
+
+behaviour_log = [] # [()(timestamp, behavior)]
+behaviour_log = deque(maxlen=600) # 只保留最近600筆
+ANALYSIS_INTERVAL = 60  # 2 min
+last_analysis_time = time.time()
 
 # 用於判斷是否長時間無活動的閾值 (秒)
 INACTIVE_THRESHOLD = 5 
@@ -40,13 +49,39 @@ def update_state(source, value):
             # 視線或手部接觸變化也算是活動
             current_state["last_mouse_move_time"] = time.time()
 
+# save file function
+def save_log_to_csv(log_data):
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"behavior_log_{timestamp}.csv"
+
+    print(f"\n[Data Saving] Saving behavior log to {filename}...")
+
+    try: 
+        # list to sa save transformatted list
+        formatted_log = []
+
+        for timestamp, behavior in log_data:
+            time_str = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
+            formatted_log.append((time_str, behavior))
+
+        with open(filename, mode='w', newline='', encoding='utf-8') as file:
+            writer = csv.writer(file)
+            writer.writerow(["Timestamp", "Behavior"])
+            writer.writerows(formatted_log)
+            
+        print(f"[Data Saving] Successfully saved {len(log_data)} records to {filename}.")
+    except Exception as e:
+        print(f"[Data Saving] Error saving log to CSV: {e}")
+
 def analyze_and_send_behavior():
     """
     根據 current_state 分析學習行為，並將結果傳送到伺服器
     """
+    global last_analysis_time
+
     while True:
         time.sleep(2) # 每 2 秒分析一次當前狀態
-
+        now = time.time()
         state = current_state
         behavior = "Unknown" # 預設行為
         
@@ -83,7 +118,7 @@ def analyze_and_send_behavior():
         #     behavior = "Active: Running Code"
 
         # 查看程式碼 (被動)
-        elif state["gaze"] == "Right" and not state["keyboard_active"]:
+        elif (state["gaze"] == "Right" or state["gaze"] == "Center") and not state["keyboard_active"]:
             behavior = "Passive: Viewing Code"
 
         # 閱讀系統反饋 (被動)
@@ -94,10 +129,12 @@ def analyze_and_send_behavior():
         elif is_off_task:
             behavior = "Passive: Off-task"
     
+    
         
         # 其他更複雜的規則可以在此擴充...
 
         if behavior != "Unknown":
+            behaviour_log.append((now, behavior))
             print(f"[Behavior Analysis] - Detected: {behavior} (Gaze: {state['gaze']}, Hand: {state['hand_contact']}, KB: {state['keyboard_active']})")
             
             # # (可選) 將分析結果傳送到伺服器
@@ -105,3 +142,14 @@ def analyze_and_send_behavior():
             #     requests.post(SERVER_URL, json={"behavior": behavior, "timestamp": time.time()})
             # except requests.exceptions.RequestException as e:
             #     print(f"Error sending behavior data: {e}")
+
+        if now - last_analysis_time >= ANALYSIS_INTERVAL:
+            window_start = now - ANALYSIS_INTERVAL
+            past_two_min = [b for t, b in behaviour_log if t >= window_start]
+            if past_two_min:
+                counter = collections.Counter(past_two_min)
+                most_common, freq = counter.most_common(1)[0]
+                print(f"[Behavior Analysis] - In the past 2 minutes, the most frequent behavior was: {most_common} ({freq} times)")
+            else:
+                 print("== 兩分鐘內無行為紀錄 ==")
+            last_analysis_time = now

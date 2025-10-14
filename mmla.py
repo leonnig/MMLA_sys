@@ -47,6 +47,10 @@ def main():
     except KeyboardInterrupt:
         print("\nProgram exiting by user request (Ctrl+C)...")
         running = False
+    finally:
+        # Saving log data before exit
+        if behavior_analysis.behaviour_log:
+            behavior_analysis.save_log_to_csv(behavior_analysis.behaviour_log)
 
 if __name__ == "__main__":
     main()

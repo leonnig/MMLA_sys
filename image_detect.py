@@ -4,7 +4,7 @@ import behavior_analysis
 
 model = YOLO('yolo11n.pt')
 
-cap = cv2.VideoCapture(1)
+cap = cv2.VideoCapture(0)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
@@ -38,7 +38,7 @@ def image_detection():
             results = model.predict(frame, imgsz=640, conf=0.25, verbose=False)[0]
             previous_results = results
         
-        hand_contact_status = "Idle" # 預設為未接觸
+        hand_contact_status = "Idle" # define is idle
 
         learning = False
         if previous_results is not None:
