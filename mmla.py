@@ -6,16 +6,22 @@ import keyboard_monitoring
 import audio_detect  
 import mouse_tracker   
 import mmla_flask
-import behavior_analysis # 載入我們的核心分析模組
+import behavior_analysis 
 
 SERVER_URL = "http://127.0.0.1:5000/api/upload"  # 留給日後有需要接收行為分析結果的API
 
 
-# 全域變數，用於控制所有執行緒的結束
+# Global flag to control the main loop
 running = True
 
 def main():
     global running
+
+    student_id = input("請輸入您的學號 (Student ID): ").strip()
+    if not student_id:
+        student_id = f"user-{int(time.time())}"
+    print(f"歡迎，{student_id}！系統即將啟動多模態學習分析 (MMLA) 功能...\n")
+
     print("MMLA system starting...")
 
     # 將所有任務放入執行緒中，設定為 daemon=True 讓主程式結束時它們也會跟著結束
@@ -50,7 +56,7 @@ def main():
     finally:
         # Saving log data before exit
         if behavior_analysis.behaviour_log:
-            behavior_analysis.save_log_to_csv(behavior_analysis.behaviour_log)
+            behavior_analysis.upload_log_to_gcs(behavior_analysis.behaviour_log, "mmla-research-data-20251020", student_id)
 
 if __name__ == "__main__":
     main()

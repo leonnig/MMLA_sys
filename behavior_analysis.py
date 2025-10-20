@@ -7,6 +7,8 @@ from collections import deque
 import collections
 from datetime import datetime
 import csv
+from google.cloud import storage
+import os
 
 #SERVER_URL = "http://127.0.0.1:5000/api/behavior" # 假設這是接收行為分析結果的 API
 
@@ -49,29 +51,46 @@ def update_state(source, value):
             # 視線或手部接觸變化也算是活動
             current_state["last_mouse_move_time"] = time.time()
 
-# save file function
-def save_log_to_csv(log_data):
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"behavior_log_{timestamp}.csv"
+def upload_log_to_gcs(log_data, bucket_name, student_id):
+    """ 將行為紀錄儲存為 CSV 並上傳到 Google Cloud Storage """
+    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    local_filename = f"behavior_log_{timestamp_str}.csv"
 
-    print(f"\n[Data Saving] Saving behavior log to {filename}...")
+    formattted_log = []
+    for timestamp, behavior in log_data:
+        human_readable_time = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
+        formattted_log.append((human_readable_time, behavior))
 
-    try: 
-        # list to sa save transformatted list
-        formatted_log = []
-
-        for timestamp, behavior in log_data:
-            time_str = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
-            formatted_log.append((time_str, behavior))
-
-        with open(filename, mode='w', newline='', encoding='utf-8') as file:
-            writer = csv.writer(file)
+    try:
+        with open(local_filename, mode='w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.writer(csvfile)
             writer.writerow(["Timestamp", "Behavior"])
-            writer.writerows(formatted_log)
-            
-        print(f"[Data Saving] Successfully saved {len(log_data)} records to {filename}.")
+            writer.writerows(formattted_log)
     except Exception as e:
         print(f"[Data Saving] Error saving log to CSV: {e}")
+        return
+    
+    #  設定 GCS 客戶端並上傳
+    try:
+        os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = 'gcp-credentials.json'  # 請確保憑證檔案路徑正確
+
+        storage_client = storage.Client()
+        bucket = storage_client.bucket(bucket_name)
+
+        destination_blob_name = f"logs/{student_id}/behavior_log_{timestamp_str}.csv"
+        blob = bucket.blob(destination_blob_name)
+
+        blob.upload_from_filename(local_filename)
+        print(f"\n[GCS Upload] 成功將 {local_filename} 上傳至 gs://{bucket_name}/{destination_blob_name}")
+    
+    except FileNotFoundError:
+        print(f"\n[GCS Upload] 錯誤：找不到金鑰檔案 'gcp-credentials.json'。請確認檔案位置是否正確。")
+    except Exception as e:
+        print(f"\n[GCS Upload] 上傳至 GCS 時發生錯誤: {e}")
+
+    finally: 
+        if os.path.exists(local_filename):
+            os.remove(local_filename)
 
 def analyze_and_send_behavior():
     """

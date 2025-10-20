@@ -47,6 +47,10 @@ pip3 install torch torchvision
 pip install ultralytics  
 ```
 
+```shell
+pip install google-cloud-storage
+```
+
 Connect your webcam(you need two) for eye tracking and image detecting
 
 Run the main detection scripts and launch the Flask dashboard
