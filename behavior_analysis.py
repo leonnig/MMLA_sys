@@ -9,8 +9,7 @@ from datetime import datetime
 import csv
 from google.cloud import storage
 import os
-
-#SERVER_URL = "http://127.0.0.1:5000/api/behavior" # 假設這是接收行為分析結果的 API
+from plyer import notification
 
 # 維護學習者當前的多模態即時狀態
 current_state = {
@@ -23,14 +22,38 @@ current_state = {
     "last_mouse_move_time": time.time(), # 最後一次滑鼠移動時間
 }
 
-behaviour_log = [] # [()(timestamp, behavior)]
+# define different feedback types and their cooldowns
+feedbacks_rules = {
+    "Passive: Off-task": {
+        "message": "看起來有點分心囉，休息一下，然後我們繼續努力吧！，有不會的都可以直接問老師喔",
+        "cooldown": 120, # 兩分鐘內不再提醒
+        "persistence": 15 # 需要持續 15 秒才觸發
+    },
+    "Active: Writing Code": {
+        "message": "持續編寫程式碼，很棒的投入！繼續保持！",
+        "cooldown": 300, # 五分鐘內不再鼓勵
+        "persistence": 0
+    },
+    "Interactive: Asking for help": {
+        "message": "提出問題是進步的關鍵，做得很好！",
+        "cooldown": 180, # 三分鐘內不再提醒
+        "persistence": 0
+    }  
+}
+
+
 behaviour_log = deque(maxlen=600) # 只保留最近600筆
-ANALYSIS_INTERVAL = 60  # 2 min
+ANALYSIS_INTERVAL = 60  # 1 min
 last_analysis_time = time.time()
 
 # 用於判斷是否長時間無活動的閾值 (秒)
 INACTIVE_THRESHOLD = 5 
 OFF_TASK_THRESHOLD = 10 # 超過10秒無任何互動才算脫離任務
+
+feedback_state = {
+    "off_task_start_time": None, # 記錄脫離任務開始的時間
+    "last_feedback_time": {},    # 記錄各類反饋的最後發送時間，避免頻繁打擾
+}
 
 # --- 狀態更新函式 ---
 def update_state(source, value):
@@ -56,16 +79,16 @@ def upload_log_to_gcs(log_data, bucket_name, student_id):
     timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     local_filename = f"behavior_log_{timestamp_str}.csv"
 
-    formattted_log = []
+    formatted_log = []
     for timestamp, behavior in log_data:
         human_readable_time = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
-        formattted_log.append((human_readable_time, behavior))
+        formatted_log.append((human_readable_time, behavior))
 
     try:
         with open(local_filename, mode='w', newline='', encoding='utf-8') as csvfile:
             writer = csv.writer(csvfile)
             writer.writerow(["Timestamp", "Behavior"])
-            writer.writerows(formattted_log)
+            writer.writerows(formatted_log)
     except Exception as e:
         print(f"[Data Saving] Error saving log to CSV: {e}")
         return
@@ -92,12 +115,71 @@ def upload_log_to_gcs(log_data, bucket_name, student_id):
         if os.path.exists(local_filename):
             os.remove(local_filename)
 
+# def trigger_feedback(behavior):
+#     """based on behavior, trigger appropriate feedback to user"""
+#     global feedback_state
+#     now = time.time()
+
+#     # define diffent feedback types and their cooldowns
+#     feedbacks_rules = {
+#             "Passive: Off-task": {
+#             "message": "看起來有點分心囉，休息一下，然後我們繼續努力吧！，有不會的都可以直接問老師喔",
+#             "cooldown": 120, # 兩分鐘內不再提醒
+#             "persistence": 15 # 需要持續 15 秒才觸發
+#         },
+#         "Active: Writing Code": {
+#             "message": "持續編寫程式碼，很棒的投入！繼續保持！",
+#             "cooldown": 300, # 五分鐘內不再鼓勵
+#             "persistence": 0
+#         },
+#         "Interactive: Asking for help": {
+#             "message": "提出問題是進步的關鍵，做得很好！",
+#             "cooldown": 180, # 三分鐘內不再提醒
+#             "persistence": 0
+#         }  
+#     }
+
+#     rule = feedbacks_rules.get(behavior)
+#     if not rule:
+#         feedback_state["off_task_start_time"] = None
+#         return
+    
+#     # 檢查冷卻時間是否已過
+#     last_time = feedback_state["last_feedback_time"].get(behavior, 0)
+#     if now - last_time < rule["cooldown"]:
+#         return
+    
+#     # 檢查行為持續時間是否足夠 (主要用於 Off-task)
+#     if rule["persistence"] > 0:
+#         if feedback_state["off_task_start_time"] is None:
+#             # 第一次偵測到，記錄開始時間
+#             feedback_state["off_task_start_time"] = now
+#             return
+#         elif now - feedback_state["off_task_start_time"] < rule["persistence"]:
+#             # 持續時間還不夠長，暫不提醒
+#             return
+
+#     # --- 發送通知 ---
+#     try:
+#         notification.notify(
+#             title="MMLA 學習小提醒",
+#             message=rule["message"],
+#             timeout=10  # 通知顯示 10 秒
+#         )
+#         # 更新最後發送時間
+#         feedback_state["last_feedback_time"][behavior] = now
+#         # 重置 off-task 計時器，避免連續觸發
+#         feedback_state["off_task_start_time"] = None
+#         print(f"[Feedback Sent] Notified user about: {behavior}")
+#     except Exception as e:
+#         print(f"[Feedback Error] Failed to send notification: {e}")
+
+
 def analyze_and_send_behavior():
     """
-    根據 current_state 分析學習行為，並將結果傳送到伺服器
+    根據 current_state 分析學習行為
     """
     global last_analysis_time
-
     while True:
         time.sleep(2) # 每 2 秒分析一次當前狀態
         now = time.time()
@@ -107,13 +189,13 @@ def analyze_and_send_behavior():
         # --- ICAP 編碼規則判斷 ---
 
         # 判斷鍵盤是否仍在活動
-        if time.time() - state["last_keyboard_time"] > INACTIVE_THRESHOLD:
+        if now - state["last_keyboard_time"] > INACTIVE_THRESHOLD:
             if state["keyboard_active"]:
                 update_state("keyboard_active", False)
 
-        # *** 核心修正：判斷是否脫離任務的邏輯 ***
+        # 判斷是否脫離任務的邏輯 
         last_activity_time = max(state["last_keyboard_time"], state["last_mouse_move_time"])
-        is_inactive_task = (time.time() - last_activity_time > OFF_TASK_THRESHOLD and
+        is_inactive_task = (now - last_activity_time > OFF_TASK_THRESHOLD and
                        state["hand_contact"] == "Idle")
         is_looking_away = state["gaze"] == "NoFace"
         is_off_task = is_inactive_task or is_looking_away
@@ -147,28 +229,39 @@ def analyze_and_send_behavior():
         # 脫離學習任務 (被動)
         elif is_off_task:
             behavior = "Passive: Off-task"
-    
-    
-        
-        # 其他更複雜的規則可以在此擴充...
 
         if behavior != "Unknown":
             behaviour_log.append((now, behavior))
             print(f"[Behavior Analysis] - Detected: {behavior} (Gaze: {state['gaze']}, Hand: {state['hand_contact']}, KB: {state['keyboard_active']})")
             
-            # # (可選) 將分析結果傳送到伺服器
-            # try:
-            #     requests.post(SERVER_URL, json={"behavior": behavior, "timestamp": time.time()})
-            # except requests.exceptions.RequestException as e:
-            #     print(f"Error sending behavior data: {e}")
+            ##trigger_feedback(behavior) //目前由 1 分鐘判斷取代
 
         if now - last_analysis_time >= ANALYSIS_INTERVAL:
             window_start = now - ANALYSIS_INTERVAL
             past_two_min = [b for t, b in behaviour_log if t >= window_start]
+            
             if past_two_min:
                 counter = collections.Counter(past_two_min)
                 most_common, freq = counter.most_common(1)[0]
-                print(f"[Behavior Analysis] - In the past 2 minutes, the most frequent behavior was: {most_common} ({freq} times)")
+                print(f"[Behavior Analysis] - In the past 1 minutes, the most frequent behavior was: {most_common} ({freq} times)")
+            
             else:
                  print("== 兩分鐘內無行為紀錄 ==")
             last_analysis_time = now
+
+            rule = feedbacks_rules.get(most_common)
+
+            # --- 發送通知 ---
+            try:
+                notification.notify(
+                    title="MMLA 學習小提醒",
+                    message=rule["message"],
+                    timeout=10  # 通知顯示 10 秒
+                )
+                # 更新最後發送時間
+                feedback_state["last_feedback_time"][behavior] = now
+                # 重置 off-task 計時器，避免連續觸發
+                feedback_state["off_task_start_time"] = None
+                print(f"[Feedback Sent] Notified user about: {behavior}")
+            except Exception as e:
+                print(f"[Feedback Error] Failed to send notification: {e}")

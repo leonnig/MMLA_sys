@@ -47,8 +47,16 @@ pip3 install torch torchvision
 pip install ultralytics  
 ```
 
+- Install google-cloud-storage to save behavior logs
+
 ```shell
 pip install google-cloud-storage
+```
+
+- Install plyer
+
+```shell
+pip install plyer
 ```
 
 Connect your webcam(you need two) for eye tracking and image detecting
