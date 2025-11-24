@@ -114,67 +114,7 @@ def upload_log_to_gcs(log_data, bucket_name, student_id):
     finally: 
         if os.path.exists(local_filename):
             os.remove(local_filename)
-
-# def trigger_feedback(behavior):
-#     """based on behavior, trigger appropriate feedback to user"""
-#     global feedback_state
-#     now = time.time()
-
-#     # define diffent feedback types and their cooldowns
-#     feedbacks_rules = {
-#             "Passive: Off-task": {
-#             "message": "看起來有點分心囉，休息一下，然後我們繼續努力吧！，有不會的都可以直接問老師喔",
-#             "cooldown": 120, # 兩分鐘內不再提醒
-#             "persistence": 15 # 需要持續 15 秒才觸發
-#         },
-#         "Active: Writing Code": {
-#             "message": "持續編寫程式碼，很棒的投入！繼續保持！",
-#             "cooldown": 300, # 五分鐘內不再鼓勵
-#             "persistence": 0
-#         },
-#         "Interactive: Asking for help": {
-#             "message": "提出問題是進步的關鍵，做得很好！",
-#             "cooldown": 180, # 三分鐘內不再提醒
-#             "persistence": 0
-#         }  
-#     }
-
-#     rule = feedbacks_rules.get(behavior)
-#     if not rule:
-#         feedback_state["off_task_start_time"] = None
-#         return
-    
-#     # 檢查冷卻時間是否已過
-#     last_time = feedback_state["last_feedback_time"].get(behavior, 0)
-#     if now - last_time < rule["cooldown"]:
-#         return
-    
-#     # 檢查行為持續時間是否足夠 (主要用於 Off-task)
-#     if rule["persistence"] > 0:
-#         if feedback_state["off_task_start_time"] is None:
-#             # 第一次偵測到，記錄開始時間
-#             feedback_state["off_task_start_time"] = now
-#             return
-#         elif now - feedback_state["off_task_start_time"] < rule["persistence"]:
-#             # 持續時間還不夠長，暫不提醒
-#             return
-
-#     # --- 發送通知 ---
-#     try:
-#         notification.notify(
-#             title="MMLA 學習小提醒",
-#             message=rule["message"],
-#             timeout=10  # 通知顯示 10 秒
-#         )
-#         # 更新最後發送時間
-#         feedback_state["last_feedback_time"][behavior] = now
-#         # 重置 off-task 計時器，避免連續觸發
-#         feedback_state["off_task_start_time"] = None
-#         print(f"[Feedback Sent] Notified user about: {behavior}")
-#     except Exception as e:
-#         print(f"[Feedback Error] Failed to send notification: {e}")
-
-
+            
 def analyze_and_send_behavior():
     """
     根據 current_state 分析學習行為
@@ -238,10 +178,10 @@ def analyze_and_send_behavior():
 
         if now - last_analysis_time >= ANALYSIS_INTERVAL:
             window_start = now - ANALYSIS_INTERVAL
-            past_two_min = [b for t, b in behaviour_log if t >= window_start]
+            recent_logs = [b for t, b in behaviour_log if t >= window_start]
             
-            if past_two_min:
-                counter = collections.Counter(past_two_min)
+            if recent_logs:
+                counter = collections.Counter(recent_logs)
                 most_common, freq = counter.most_common(1)[0]
                 print(f"[Behavior Analysis] - In the past 1 minutes, the most frequent behavior was: {most_common} ({freq} times)")
             

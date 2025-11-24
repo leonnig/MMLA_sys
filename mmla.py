@@ -26,10 +26,9 @@ def main():
 
     # 將所有任務放入執行緒中，設定為 daemon=True 讓主程式結束時它們也會跟著結束
     threads = [
-        # threading.Thread(target=mmla_flask.run_server, daemon=True),
         threading.Thread(target=eye_tracking.eye_gaze_tracking, daemon=True),
         threading.Thread(target=audio_detect.audio_detection, daemon=True),
-        threading.Thread(target=mouse_tracker.start_tracking, daemon=True),
+        #threading.Thread(target=mouse_tracker.start_tracking, daemon=True),
         threading.Thread(target=keyboard_monitoring.start_listening, daemon=True),
         threading.Thread(target=image_detect.image_detection, daemon=True),
         # *** 核心修改：啟動行為分析執行緒 ***

@@ -4,19 +4,6 @@ import time
 import requests
 import behavior_analysis
 
-SERVER_URL = "http://127.0.0.1:5000/api/upload"  
-
-def send_gaze_data(gaze, fps):
-    data = {
-        "timestamp": time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
-        "gaze": gaze,
-        "fps": fps
-    }
-    try:
-        requests.post(SERVER_URL, json=data, timeout=1)
-    except Exception as e:
-        print(f"送出偵測資料失敗: {e}")
-
 # initialize mediapipe face mesh
 mp_face_mesh = mp.solutions.face_mesh
 face_mesh = mp_face_mesh.FaceMesh(refine_landmarks=True, max_num_faces=1)
@@ -28,7 +15,7 @@ mp_drawing_styles = mp.solutions.drawing_styles
 LEFT_EYE = list(range(474, 478))
 RIGHT_EYE = list(range(469, 473))
 
-cap = cv2.VideoCapture(1)
+cap = cv2.VideoCapture(0)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
