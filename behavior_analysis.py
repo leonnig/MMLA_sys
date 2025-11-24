@@ -20,6 +20,7 @@ current_state = {
     "mouse_position": (0, 0),   # 滑鼠最後的位置
     "last_keyboard_time": time.time(), # 最後一次鍵盤活動時間
     "last_mouse_move_time": time.time(), # 最後一次滑鼠移動時間
+    "last_code_save_time": 0  # 最後一次程式碼儲存時間
 }
 
 # define different feedback types and their cooldowns
@@ -125,6 +126,7 @@ def analyze_and_send_behavior():
         now = time.time()
         state = current_state
         behavior = "Unknown" # 預設行為
+        just_saved_code = (now - state["last_code_save_time"] < 10) # 定義 10 秒內有存檔，就算是在寫程式
         
         # --- ICAP 編碼規則判斷 ---
 
@@ -147,7 +149,7 @@ def analyze_and_send_behavior():
             update_state("speech_keyword", None)
 
         # 撰寫程式碼 (主動)
-        elif state["gaze"] in ["Left", "Center"] and state["keyboard_active"]:
+        elif state["gaze"] in ["Left", "Center"] and (state["keyboard_active"] or just_saved_code):
             behavior = "Active: Writing Code"
 
         # 進行實驗 (主動)
@@ -173,8 +175,6 @@ def analyze_and_send_behavior():
         if behavior != "Unknown":
             behaviour_log.append((now, behavior))
             print(f"[Behavior Analysis] - Detected: {behavior} (Gaze: {state['gaze']}, Hand: {state['hand_contact']}, KB: {state['keyboard_active']})")
-            
-            ##trigger_feedback(behavior) //目前由 1 分鐘判斷取代
 
         if now - last_analysis_time >= ANALYSIS_INTERVAL:
             window_start = now - ANALYSIS_INTERVAL

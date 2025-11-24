@@ -11,8 +11,6 @@ Keyboard and mouse activity logging
 
 Speech keyword detection and recognition
 
-Flask-based web dashboard displaying live, aggregated data
-
 Modular design facilitates multi-device and multi-user scalability
 
 ## Installation
@@ -57,6 +55,12 @@ pip install google-cloud-storage
 
 ```shell
 pip install plyer
+```
+
+- Install google-genai and watchdog package
+
+```shell
+pip install google-genai watchdog
 ```
 
 Connect your webcam(you need two) for eye tracking and image detecting

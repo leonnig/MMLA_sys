@@ -7,6 +7,7 @@ import audio_detect
 import mouse_tracker   
 import mmla_flask
 import behavior_analysis 
+import  code_monitor
 
 SERVER_URL = "http://127.0.0.1:5000/api/upload"  # 留給日後有需要接收行為分析結果的API
 
@@ -20,6 +21,11 @@ def main():
     student_id = input("請輸入您的學號 (Student ID): ").strip()
     if not student_id:
         student_id = f"user-{int(time.time())}"
+
+    default_arduino_path = "C:\\Users\\Cool\\Documents\\Arduino\\Blink"
+    arduino_path = input(f"請輸入 Arduino 專案路徑 (預設: {default_arduino_path}): ").strip()
+    if not arduino_path:
+        arduino_path = default_arduino_path
     print(f"歡迎，{student_id}！系統即將啟動多模態學習分析 (MMLA) 功能...\n")
 
     print("MMLA system starting...")
@@ -28,11 +34,12 @@ def main():
     threads = [
         threading.Thread(target=eye_tracking.eye_gaze_tracking, daemon=True),
         threading.Thread(target=audio_detect.audio_detection, daemon=True),
-        #threading.Thread(target=mouse_tracker.start_tracking, daemon=True),
+        threading.Thread(target=mouse_tracker.start_tracking, daemon=True),
         threading.Thread(target=keyboard_monitoring.start_listening, daemon=True),
         threading.Thread(target=image_detect.image_detection, daemon=True),
         # *** 核心修改：啟動行為分析執行緒 ***
-        threading.Thread(target=behavior_analysis.analyze_and_send_behavior, daemon=True)
+        threading.Thread(target=behavior_analysis.analyze_and_send_behavior, daemon=True),
+        threading.Thread(target=code_monitor.start_monitoring, args=(arduino_path,), daemon=True),
     ]
 
     # 啟動所有執行緒
