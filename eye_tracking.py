@@ -52,7 +52,7 @@ def eye_gaze_tracking():
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
         h, w, _ = image.shape
 
-        # 預設狀態為 "NoFace"
+        # default state is "NoFace"
         gaze = "NoFace"
         
         if results.multi_face_landmarks:
@@ -86,13 +86,12 @@ def eye_gaze_tracking():
                 if eye_width != 0:
                     iris_offset = left_iris_center_x - left_eye_left_x
                     ratio = iris_offset / eye_width
-                    if ratio < 0.47:
+                    if ratio < 0.43:
                         gaze = "Left"
-                    elif ratio > 0.53:
+                    elif ratio > 0.57:
                         gaze = "Right"
                     else:
                         gaze = "Center"
-        # *** 核心修改：更新中央狀態，而不是直接發送請求 ***
         behavior_analysis.update_state("gaze", gaze)
 
         end = time.time()

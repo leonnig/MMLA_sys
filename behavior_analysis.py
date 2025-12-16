@@ -10,6 +10,7 @@ import csv
 from google.cloud import storage
 import os
 from plyer import notification
+import code_monitor
 
 # 維護學習者當前的多模態即時狀態
 current_state = {
@@ -56,6 +57,15 @@ feedback_state = {
     "last_feedback_time": {},    # 記錄各類反饋的最後發送時間，避免頻繁打擾
 }
 
+last_behavior_state = "Unknown"
+behavior_state_time = time.time()
+
+# 定義觸發 AI 介入的閾值 (秒)
+STUCK_THRESHOLD = 10 # if Viewing Code in 60s
+AI_COOLDOWN = 20    # AI cooldown time
+
+last_ai_trigger_time = 0
+
 # --- 狀態更新函式 ---
 def update_state(source, value):
     """
@@ -66,7 +76,7 @@ def update_state(source, value):
     global current_state
     if source in current_state:
         current_state[source] = value
-        # 更新對應的活動時間戳
+        # 更新對應的活動時間戳F
         if source == "keyboard_active" and value:
             current_state["last_keyboard_time"] = time.time()
         elif source == "mouse_position":
@@ -120,12 +130,13 @@ def analyze_and_send_behavior():
     """
     根據 current_state 分析學習行為
     """
-    global last_analysis_time
+    global last_analysis_time, last_behavior_state, behavior_state_time, last_ai_trigger_time
+
     while True:
         time.sleep(2) # 每 2 秒分析一次當前狀態
         now = time.time()
         state = current_state
-        behavior = "Unknown" # 預設行為
+        behavior = "Unknown" # defined default behavior
         just_saved_code = (now - state["last_code_save_time"] < 10) # 定義 10 秒內有存檔，就算是在寫程式
         
         # --- ICAP 編碼規則判斷 ---
@@ -175,6 +186,25 @@ def analyze_and_send_behavior():
         if behavior != "Unknown":
             behaviour_log.append((now, behavior))
             print(f"[Behavior Analysis] - Detected: {behavior} (Gaze: {state['gaze']}, Hand: {state['hand_contact']}, KB: {state['keyboard_active']})")
+
+        if behavior == last_behavior_state:
+            duration = now - behavior_state_time
+        else:
+            last_behavior_state = behavior
+            behavior_state_time = now
+            duration = 0
+
+        target_behaviors = ["Passive: Viewing Code", "Passive: Off-task"]
+
+        if behavior in target_behaviors and duration > STUCK_THRESHOLD:
+            if now - last_ai_trigger_time > AI_COOLDOWN:
+                print(f"\n[Behavior Trigger] 學生處於 {behavior} 已超過 {duration:.0f} 秒，判定為卡關或分心。")
+                print("[Behavior Trigger] 呼叫 code_monitor 啟動 AI 輔助...")
+                try:
+                    code_monitor.trigger_ai_feedback(reason="stuck")
+                    last_ai_trigger_time = now
+                except Exception as e:
+                    print(f"[Behavior Trigger] 呼叫 AI 輔助失敗: {e}")        
 
         if now - last_analysis_time >= ANALYSIS_INTERVAL:
             window_start = now - ANALYSIS_INTERVAL
