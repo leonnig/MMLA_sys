@@ -10,13 +10,13 @@ import csv
 from google.cloud import storage
 import os
 from plyer import notification
-import code_monitor
 
 # 維護學習者當前的多模態即時狀態
 current_state = {
     "gaze": "Center",           # 初始值: "Left", "Center", "Right"
     "hand_contact": "Idle",     # 初始值: "keyboard", "mouse", "board", "Idle"
     "speech_keyword": None,     # 偵測到的關鍵字
+    "speech_intent": "Silence",      # 偵測到的語音意圖類型
     "keyboard_active": False,   # 鍵盤是否在活動中
     "mouse_position": (0, 0),   # 滑鼠最後的位置
     "last_keyboard_time": time.time(), # 最後一次鍵盤活動時間
@@ -61,8 +61,8 @@ last_behavior_state = "Unknown"
 behavior_state_time = time.time()
 
 # 定義觸發 AI 介入的閾值 (秒)
-STUCK_THRESHOLD = 10 # if Viewing Code in 60s
-AI_COOLDOWN = 20    # AI cooldown time
+STUCK_THRESHOLD = 60 # if Viewing Code in 60s
+AI_COOLDOWN = 20    # AI cooldown time 
 
 last_ai_trigger_time = 0
 
@@ -77,12 +77,16 @@ def update_state(source, value):
     if source in current_state:
         current_state[source] = value
         # 更新對應的活動時間戳F
+        if source == "speech_intent" and value != "Silence":
+            print(f"[State Update] 語音狀態更新: {value}")
         if source == "keyboard_active" and value:
             current_state["last_keyboard_time"] = time.time()
         elif source == "mouse_position":
             current_state["last_mouse_move_time"] = time.time()
         elif source == "gaze" or source == "hand_contact":
             # 視線或手部接觸變化也算是活動
+            current_state["last_mouse_move_time"] = time.time()
+        elif source == "speech_intent" and value != "Silence":
             current_state["last_mouse_move_time"] = time.time()
 
 def upload_log_to_gcs(log_data, bucket_name, student_id):
@@ -127,6 +131,7 @@ def upload_log_to_gcs(log_data, bucket_name, student_id):
             os.remove(local_filename)
             
 def analyze_and_send_behavior():
+    import code_monitor
     """
     根據 current_state 分析學習行為
     """

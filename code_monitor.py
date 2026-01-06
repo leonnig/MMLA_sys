@@ -95,7 +95,32 @@ def _perform_analysis(filepath, reason):
     if not code_content:
         return
     
-    if reason == "stuck":
+    #讀取目前的語音狀態
+    current_state = behavior_analysis.current_state
+    speech_intent = current_state.get("speech_intent", "Silence")
+    speech_kw = current_state.get("speech_keyword", "")
+
+    if speech_intent == "Help_Seeking":
+        context_prompt = f"""
+        【緊急情境：學生口頭求救】
+        學生剛才喊了求救關鍵字：「{speech_kw}」。
+        請忽略之前的教學限制，擔任「熱心的助教」。
+        學生現在情緒可能焦慮，請直接針對程式碼中的錯誤或邏輯漏洞，給予明確的「第一步修正建議」。
+        語氣要特別溫柔並給予情緒支持（如：別擔心，我們試試看...）。
+        """
+        # 重要：使用完這次語音意圖後，建議將其重置，避免下次存檔又重複觸發
+        behavior_analysis.update_state("speech_intent", "Silence")
+
+    elif speech_intent == "Peer_Discussion":
+        context_prompt = f"""
+        【協作情境：同儕討論】
+        學生正在與旁邊同學討論，關鍵字：「{speech_kw}」。
+        請擔任「協作引導者」。
+        不要直接給出答案打斷他們的討論。請根據程式碼，提供一個「驗證問題」或「思考實驗」，幫助他們驗證彼此的想法。
+        """
+        behavior_analysis.update_state("speech_intent", "Silence")
+    
+    elif reason == "stuck":
         context_prompt = """
                         你現在是一位蘇格拉底式的程式導師。學生似乎卡住了。
                         請不要直接寫出正確程式碼。
@@ -103,9 +128,10 @@ def _perform_analysis(filepath, reason):
                         """
     else:
         context_prompt = """"
-                        學生剛存檔。請快速檢查是否有明顯語法錯誤（如漏掉分號、括號不對稱）。
+                        學生剛存檔。請快速檢查是否有明顯語法錯誤（如漏掉分號、括號不對稱），以及有無程式邏輯錯誤。
+                        每個程式碼第一行會標示此次任務的目標與條件，請務必去對照學生的 code 有無完成條件
                         如果沒有錯誤，請給予簡短肯定。
-                        如果有錯誤，請指出錯誤行數的大概位置，並簡單說明問題所在。
+                        如果有錯誤，請指出錯誤行數的大概位置，並說明問題所在，盡量用提示的方式。
                         """
 
     prompt = f"""
@@ -149,7 +175,8 @@ def analyze_code_with_gemini(filepath):
         prompt = f"""
         你是一個 Arduino 程式碼助教，協助國高中學生。
         請針對以下程式碼提供簡短的修正建議或鼓勵。
-        注意要仔細檢查程式碼中的錯誤或潛在問題，包括語法錯誤要特別注意。
+        每個程式碼第一行會標示此次任務的目標與條件，請務必去對照學生的 code 有無完成條件
+        注意要仔細檢查程式碼中的錯誤或程式邏輯問題，包括語法錯誤要特別注意。
         限制：盡量不要超過 8 句，語氣親切，指出關鍵錯誤或給予肯定。
         
         --- 學生程式碼 ---
