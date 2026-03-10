@@ -7,8 +7,11 @@ from google import genai
 import behavior_analysis
 import os
 
-API_KEY = 'AIzaSyAspel8yu6OK7CX07uzZp2qliS1ygxrFOY'
+API_KEY = ""
 client = genai.Client(api_key=API_KEY)
+
+GLOBAL_LAST_CALL_TIME = 0       # 記錄上一次呼叫的時間
+SAFE_INTERVAL = 300             # 設定冷卻時間 300 秒 (5分鐘)，保護您的 20 次額度
 
 CURRENT_WATCHING_FILE = None 
 
@@ -18,6 +21,9 @@ COOLDOWN_SECONDS = 15
 def show_custom_messagebox(title, message):
     """ 在獨立執行緒中顯示 Tkinter 彈窗 """
     try:
+        # 彈窗準備顯示，通知系統進入 AI Feedback 狀態
+        behavior_analysis.update_state("ai_feedback_active", True)
+
         root = tk.Tk()
         root.withdraw()  # hide main window
 
@@ -38,25 +44,43 @@ def show_custom_messagebox(title, message):
         tk.Label(popup, text = message, padx = 10, pady = 10,
                  justify = tk.LEFT, wraplength = popup_width - 20, bg = "#f0f0f0", 
                  font = ("Arial", 10)).pack(expand=True, fill='both')
-        tk.Button(popup, text="我知道了", command=lambda: [popup.destroy(), root.destroy()], bg="#dddddd").pack(pady=5)
+        
+        # 定義一個關閉視窗的處理函式
+        def close_popup():
+            # 彈窗關閉，通知系統解除 AI Feedback 狀態
+            behavior_analysis.update_state("ai_feedback_active", False)
+            popup.destroy()
+            root.destroy()
+
+        tk.Button(popup, text="我知道了", command=close_popup, bg="#dddddd").pack(pady=5)
 
         # 設定 20 秒後自動關閉，避免學生不關視窗堆積
         root.after(20000, lambda: [popup.destroy(), root.destroy()])        
         root.mainloop()
     except Exception as e:
         print(f"[UI Error] 彈窗顯示失敗: {e}")
+        # 發生錯誤時確保狀態不會卡在 True
+        behavior_analysis.update_state("ai_feedback_active", False)
 
 def trigger_ai_feedback(reason="stuck"):
     """
     這是一個公開函式，供 behavior_analysis 呼叫
     :param reason: 觸發原因，例如 "stuck" (卡住), "save" (存檔)
     """
-    global CURRENT_WATCHING_FILE
+    global CURRENT_WATCHING_FILE, GLOBAL_LAST_CALL_TIME, SAFE_INTERVAL 
+
+    now = time.time()
+    time_diff = now - GLOBAL_LAST_CALL_TIME
+    # 如果距離上次呼叫還不到 5 分鐘，就直接擋掉！
+    if time_diff < SAFE_INTERVAL:
+        print(f"🛑 [API 守門員] 阻擋呼叫！還在冷卻中 (剩餘 {int(SAFE_INTERVAL - time_diff)} 秒)。原因: {reason}")
+        return  # <--- 這裡直接結束，保護您的額度
 
     # Arduino 存檔時會先刪除舊檔再寫新檔，如果不等待，
     # Python 會在檔案「消失」的那一瞬間去讀取，導致 FileNotFound。
-    print("[Debug] 等待檔案寫入完成...")
-    time.sleep(1.0) 
+    if reason == "save":
+        print("[Debug] 等待檔案寫入完成...")
+        time.sleep(1.0) 
 
     target_file = CURRENT_WATCHING_FILE
 
@@ -72,7 +96,7 @@ def trigger_ai_feedback(reason="stuck"):
         time.sleep(1.0)
         if not os.path.exists(target_file):
             return
-    
+    GLOBAL_LAST_CALL_TIME = now 
     print(f"[Code Monitor] 觸發 AI 反饋，原因：{reason}")
 
     t = threading.Thread(target=_perform_analysis, args=(CURRENT_WATCHING_FILE, reason))
@@ -229,7 +253,7 @@ def start_monitoring(path_to_watch):
     if all_ino_files:
         CURRENT_WATCHING_FILE = max(all_ino_files, key=os.path.getmtime) # 取最新修改的 .ino 檔案
         print(f"[Code Monitor] 啟動監控, 目標路徑: {path_to_watch})")
-        print(f"[Cpde Monitor] 目前監控的 Arduino 檔案: {CURRENT_WATCHING_FILE}")
+        print(f"[Code Monitor] 目前監控的 Arduino 檔案: {CURRENT_WATCHING_FILE}")
     else:
         print(f"[Code Monitor] 警告：在目標路徑中找不到任何 .ino 檔案: {path_to_watch}")
         return

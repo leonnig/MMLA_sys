@@ -21,7 +21,8 @@ current_state = {
     "mouse_position": (0, 0),   # 滑鼠最後的位置
     "last_keyboard_time": time.time(), # 最後一次鍵盤活動時間
     "last_mouse_move_time": time.time(), # 最後一次滑鼠移動時間
-    "last_code_save_time": 0  # 最後一次程式碼儲存時間
+    "last_code_save_time": 0,  # 最後一次程式碼儲存時間 
+    "ai_feedback_active": False  # 記錄彈窗是否開啟
 }
 
 # define different feedback types and their cooldowns
@@ -158,31 +159,41 @@ def analyze_and_send_behavior():
         is_looking_away = state["gaze"] == "NoFace"
         is_off_task = is_inactive_task or is_looking_away
 
-        # 請求協助 (互動)
-        if state["speech_keyword"] in ["老師", "請問", "好難"]:
+        speech_intent = state.get("speech_intent", "Silence")
+
+        # 互動:請求協助
+        if speech_intent == "Help_Seeking":
             behavior = "Interactive: Asking for help"
-            # 將其視為一次性事件，處理完畢後立刻將關鍵字狀態重設為 None
+            # 處理完畢後重置，避免下一秒繼續計入
+            update_state("speech_intent", "Silence") 
             update_state("speech_keyword", None)
+
+        # 互動：同儕討論
+        elif speech_intent == "Peer_Discussion":
+            behavior = "Interactive: Peer Discussion"
+            update_state("speech_intent", "Silence")
+            update_state("speech_keyword", None)
+
 
         # 撰寫程式碼 (主動)
         elif state["gaze"] in ["Left", "Center"] and (state["keyboard_active"] or just_saved_code):
             behavior = "Active: Writing Code"
 
         # 進行實驗 (主動)
-        elif state["hand_contact"] in ["board", "sensor", "mouse", "keyboard"]:
+        elif state["hand_contact"] in ["breadboard", "arduino"] and state["gaze"] == "NoFace":
             behavior = "Active: Experimenting"
             
         # 執行程式 (主動) - 此處需要更詳細的滑鼠位置定義
         # elif state["mouse_position"] in EXECUTION_AREA and is_click:
         #     behavior = "Active: Running Code"
 
-        # 查看程式碼 (被動)
-        elif (state["gaze"] == "Right" or state["gaze"] == "Center") and not state["keyboard_active"]:
-            behavior = "Passive: Viewing Code"
-
         # 閱讀系統反饋 (被動)
-        elif state["gaze"] == "Left" and not state["keyboard_active"]:
+        elif (state["gaze"] == "Left" or state["gaze"] == "Center") and not state["keyboard_active"] and state["ai_feedback_active"]:
             behavior = "Passive: Reading Feedback"
+
+        # 查看程式碼 (被動)
+        elif (state["gaze"] == "Right" or state["gaze"] == "Center") and not state["keyboard_active"] and not state["ai_feedback_active"]:
+            behavior = "Passive: Viewing Code"
 
         # 脫離學習任務 (被動)
         elif is_off_task:

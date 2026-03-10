@@ -2,7 +2,7 @@ from ultralytics import YOLO
 import cv2
 import behavior_analysis
 
-model = YOLO('yolo11n.pt')
+model = YOLO('v2.pt')
 
 cap = cv2.VideoCapture(1)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
@@ -12,8 +12,8 @@ frame_count = 0
 frame_skip = 3
 previous_results = None
 
-LEARNING_OBJECTS = ["keyboard", "mouse", "board", "sensor"]  
-HAND_OBJECTS = ["person"]  
+LEARNING_OBJECTS = ["breadboard", "arduino"]  
+HAND_OBJECTS = ["hand"]  
 
 def is_collision(boxA, boxB):
     xA = max(boxA[0], boxB[0])
@@ -35,7 +35,7 @@ def image_detection():
         # every frame_skip frames do prediction
         if frame_count % frame_skip == 0:
             # predict return results list; we only process the first result
-            results = model.predict(frame, imgsz=640, conf=0.25, verbose=False)[0]
+            results = model.predict(frame, imgsz=640, conf=0.7, verbose=False)[0]
             previous_results = results
         
         hand_contact_status = "Idle" # define is idle
@@ -61,7 +61,6 @@ def image_detection():
                 for target_box, target_conf, target_name in targets:
                     if is_collision(hand_box, target_box):
                         hand_contact_status = target_name # 更新接觸狀態為物件名稱
-                        break
                         learning = True
                         break
                 if hand_contact_status != "Idle":
@@ -81,7 +80,7 @@ def image_detection():
                 cv2.putText(frame, label, (x1, y1 - 10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
-        status_text = "Learning" if learning else "Idle"
+        status_text = "Experimenting" if learning else "Idle"
         cv2.putText(frame, f"Status: {status_text}", (10, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8,
                     (0, 255, 0) if learning else (0, 0, 255), 2)
