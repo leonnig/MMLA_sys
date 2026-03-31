@@ -11,6 +11,12 @@ from google.cloud import storage
 import os
 from plyer import notification
 
+# 新增系統暫停旗標
+SYSTEM_PAUSED = False
+
+# 控制是否顯示 OpenCV 畫面的開關 (預設為不顯示，節省效能)
+SHOW_VIDEO = False
+
 # 維護學習者當前的多模態即時狀態
 current_state = {
     "gaze": "Center",           # 初始值: "Left", "Center", "Right"
@@ -58,14 +64,31 @@ feedback_state = {
     "last_feedback_time": {},    # 記錄各類反饋的最後發送時間，避免頻繁打擾
 }
 
-last_behavior_state = "Unknown"
-behavior_state_time = time.time()
+# last_behavior_state = "Unknown"
+# behavior_state_time = time.time()
 
 # 定義觸發 AI 介入的閾值 (秒)
-STUCK_THRESHOLD = 60 # if Viewing Code in 60s
+STUCK_THRESHOLD = 15 # if Viewing Code in 60s
 AI_COOLDOWN = 20    # AI cooldown time 
 
 last_ai_trigger_time = 0
+
+# 用於「平滑化」追蹤卡關狀態的計時器
+stuck_start_time = None  
+noise_start_time = None  
+TOLERANCE_SECONDS = 3.0  # 容忍 3 秒的視線飄移或誤判 (雜訊)
+
+# 新手保護盾變數
+grace_period_end_time = 0
+
+def reset_grace_period(seconds=60):
+    """ 啟動新手保護盾，指定秒數內不觸發卡關反饋 """
+    global grace_period_end_time, stuck_start_time, noise_start_time
+    grace_period_end_time = time.time() + seconds
+    # 同時清空之前的卡關計時，確保重新計算
+    stuck_start_time = None
+    noise_start_time = None
+    print(f"\n[Behavior Analysis] 🛡️ 啟動新手保護期！ {seconds} 秒內暫停主動卡關偵測。")
 
 # --- 狀態更新函式 ---
 def update_state(source, value):
@@ -137,9 +160,15 @@ def analyze_and_send_behavior():
     根據 current_state 分析學習行為
     """
     global last_analysis_time, last_behavior_state, behavior_state_time, last_ai_trigger_time
-
+    global stuck_start_time, noise_start_time
+    
     while True:
         time.sleep(2) # 每 2 秒分析一次當前狀態
+
+        # 🟢 新增：如果系統暫停，就不做任何行為判定與計時
+        if SYSTEM_PAUSED:
+            continue
+
         now = time.time()
         state = current_state
         behavior = "Unknown" # defined default behavior
@@ -174,6 +203,9 @@ def analyze_and_send_behavior():
             update_state("speech_intent", "Silence")
             update_state("speech_keyword", None)
 
+        # 存檔並驗證結果 (建構) 
+        elif just_saved_code and state["hand_contact"] in ["breadboard", "arduino"] and state["gaze"] == "NoFace":
+            behavior = "Constructive: Testing & Debugging"
 
         # 撰寫程式碼 (主動)
         elif state["gaze"] in ["Left", "Center"] and (state["keyboard_active"] or just_saved_code):
@@ -203,25 +235,56 @@ def analyze_and_send_behavior():
             behaviour_log.append((now, behavior))
             print(f"[Behavior Analysis] - Detected: {behavior} (Gaze: {state['gaze']}, Hand: {state['hand_contact']}, KB: {state['keyboard_active']})")
 
-        if behavior == last_behavior_state:
-            duration = now - behavior_state_time
-        else:
-            last_behavior_state = behavior
-            behavior_state_time = now
-            duration = 0
+        # if behavior == last_behavior_state:
+        #     duration = now - behavior_state_time
+        # else:
+        #     last_behavior_state = behavior
+        #     behavior_state_time = now
+        #     duration = 0
 
         target_behaviors = ["Passive: Viewing Code", "Passive: Off-task"]
 
-        if behavior in target_behaviors and duration > STUCK_THRESHOLD:
-            if now - last_ai_trigger_time > AI_COOLDOWN:
-                print(f"\n[Behavior Trigger] 學生處於 {behavior} 已超過 {duration:.0f} 秒，判定為卡關或分心。")
+        if behavior in target_behaviors:
+            # 確實處於卡關/發呆狀態
+            if stuck_start_time is None:
+                stuck_start_time = now # 開始計時
+            noise_start_time = None    # 清除雜訊計時
+            duration = now - stuck_start_time
+        else:
+            # 處於非卡關狀態 (可能是在寫扣，也可能是轉頭的短暫 Unknown 雜訊)
+            if stuck_start_time is not None:
+                if noise_start_time is None:
+                    noise_start_time = now # 雜訊開始計時
+                
+                # 檢查雜訊是否超過容忍時間 (3秒)
+                if now - noise_start_time > TOLERANCE_SECONDS:
+                    # 真的脫離卡關狀態了！重置所有計時器
+                    stuck_start_time = None
+                    noise_start_time = None
+                    duration = 0
+                else:
+                    # 還在容忍時間內，假裝他還在卡關，繼續累計時間！
+                    duration = now - stuck_start_time
+            else:
+                duration = 0   
+
+        # --- 觸發 AI 介入 ---
+        if duration > STUCK_THRESHOLD:
+            if now < grace_period_end_time:
+                # 仍在保護期內，安靜地跳過，不觸發 AI
+                pass
+            elif now - last_ai_trigger_time > AI_COOLDOWN:
+                print(f"\n[Behavior Trigger] 學生處於被動狀態已超過 {duration:.0f} 秒 (包含容錯)，判定為卡關或分心。")
                 print("[Behavior Trigger] 呼叫 code_monitor 啟動 AI 輔助...")
                 try:
                     code_monitor.trigger_ai_feedback(reason="stuck")
                     last_ai_trigger_time = now
+                    # 觸發後重置計時器，準備下一輪判定
+                    stuck_start_time = now 
                 except Exception as e:
-                    print(f"[Behavior Trigger] 呼叫 AI 輔助失敗: {e}")        
+                    print(f"[Behavior Trigger] 呼叫 AI 輔助失敗: {e}")
 
+        # --- 以下為定期印出最高頻率行為的邏輯 ---
         if now - last_analysis_time >= ANALYSIS_INTERVAL:
             window_start = now - ANALYSIS_INTERVAL
             recent_logs = [b for t, b in behaviour_log if t >= window_start]
@@ -230,24 +293,62 @@ def analyze_and_send_behavior():
                 counter = collections.Counter(recent_logs)
                 most_common, freq = counter.most_common(1)[0]
                 print(f"[Behavior Analysis] - In the past 1 minutes, the most frequent behavior was: {most_common} ({freq} times)")
+
+                rule = feedbacks_rules.get(most_common)
+                if rule:
+                    try:
+                        notification.notify(
+                            title="MMLA 學習小提醒",
+                            message=rule["message"],
+                            timeout=10
+                        )
+                        feedback_state["last_feedback_time"][most_common] = now
+                        feedback_state["off_task_start_time"] = None
+                        print(f"[Feedback Sent] Notified user about: {most_common}")
+                    except Exception as e:
+                        print(f"[Feedback Error] Failed to send notification: {e}")
+
+                else:
+                    print("== 兩分鐘內無行為紀錄 ==")
+
+                last_analysis_time = now
+
+        # if behavior in target_behaviors and duration > STUCK_THRESHOLD:
+        #     if now - last_ai_trigger_time > AI_COOLDOWN:
+        #         print(f"\n[Behavior Trigger] 學生處於 {behavior} 已超過 {duration:.0f} 秒，判定為卡關或分心。")
+        #         print("[Behavior Trigger] 呼叫 code_monitor 啟動 AI 輔助...")
+        #         try:
+        #             code_monitor.trigger_ai_feedback(reason="stuck")
+        #             last_ai_trigger_time = now
+        #         except Exception as e:
+        #             print(f"[Behavior Trigger] 呼叫 AI 輔助失敗: {e}")        
+
+        # if now - last_analysis_time >= ANALYSIS_INTERVAL:
+        #     window_start = now - ANALYSIS_INTERVAL
+        #     recent_logs = [b for t, b in behaviour_log if t >= window_start]
             
-            else:
-                 print("== 兩分鐘內無行為紀錄 ==")
-            last_analysis_time = now
+        #     if recent_logs:
+        #         counter = collections.Counter(recent_logs)
+        #         most_common, freq = counter.most_common(1)[0]
+        #         print(f"[Behavior Analysis] - In the past 1 minutes, the most frequent behavior was: {most_common} ({freq} times)")
+            
+        #     else:
+        #          print("== 兩分鐘內無行為紀錄 ==")
+        #     last_analysis_time = now
 
-            rule = feedbacks_rules.get(most_common)
+        #     rule = feedbacks_rules.get(most_common)
 
-            # --- 發送通知 ---
-            try:
-                notification.notify(
-                    title="MMLA 學習小提醒",
-                    message=rule["message"],
-                    timeout=10  # 通知顯示 10 秒
-                )
-                # 更新最後發送時間
-                feedback_state["last_feedback_time"][behavior] = now
-                # 重置 off-task 計時器，避免連續觸發
-                feedback_state["off_task_start_time"] = None
-                print(f"[Feedback Sent] Notified user about: {behavior}")
-            except Exception as e:
-                print(f"[Feedback Error] Failed to send notification: {e}")
+        #     # --- 發送通知 ---
+        #     try:
+        #         notification.notify(
+        #             title="MMLA 學習小提醒",
+        #             message=rule["message"],
+        #             timeout=10  # 通知顯示 10 秒
+        #         )
+        #         # 更新最後發送時間
+        #         feedback_state["last_feedback_time"][behavior] = now
+        #         # 重置 off-task 計時器，避免連續觸發
+        #         feedback_state["off_task_start_time"] = None
+        #         print(f"[Feedback Sent] Notified user about: {behavior}")
+        #     except Exception as e:
+        #         print(f"[Feedback Error] Failed to send notification: {e}")

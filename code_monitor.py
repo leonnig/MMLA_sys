@@ -3,20 +3,24 @@ import threading
 import tkinter as tk
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-from google import genai
+import openai
 import behavior_analysis
 import os
+import datetime
 
 API_KEY = ""
-client = genai.Client(api_key=API_KEY)
+client = openai.OpenAI(api_key=API_KEY)
 
 GLOBAL_LAST_CALL_TIME = 0       # 記錄上一次呼叫的時間
-SAFE_INTERVAL = 300             # 設定冷卻時間 300 秒 (5分鐘)，保護您的 20 次額度
+SAFE_INTERVAL = 180             # 設定冷卻時間 180 秒 (3分鐘)，保護您的 20 次額度
 
 CURRENT_WATCHING_FILE = None 
 
 last_processed_time = 0
 COOLDOWN_SECONDS = 15
+
+AI_FEEDBACK_HISTORY = []  # 儲存歷史記憶的陣列
+MAX_HISTORY_LENGTH = 3    # 只記憶最近 3 次，避免 Prompt 過長消耗 Token
 
 def show_custom_messagebox(title, message):
     """ 在獨立執行緒中顯示 Tkinter 彈窗 """
@@ -52,10 +56,13 @@ def show_custom_messagebox(title, message):
             popup.destroy()
             root.destroy()
 
+        # 攔截右上角的「Ｘ」，強制導向 close_popup
+        popup.protocol("WM_DELETE_WINDOW", close_popup)
+
         tk.Button(popup, text="我知道了", command=close_popup, bg="#dddddd").pack(pady=5)
 
-        # 設定 20 秒後自動關閉，避免學生不關視窗堆積
-        root.after(20000, lambda: [popup.destroy(), root.destroy()])        
+        # 設定 10 秒後自動關閉，避免學生不關視窗堆積
+        root.after(120000, close_popup)        
         root.mainloop()
     except Exception as e:
         print(f"[UI Error] 彈窗顯示失敗: {e}")
@@ -105,6 +112,7 @@ def trigger_ai_feedback(reason="stuck"):
 
 def _perform_analysis(filepath, reason):
     """ 實際執行讀檔與 API 呼叫的內部函式 """
+    global AI_FEEDBACK_HISTORY  # 確保修改的是外面的全域記憶
     code_content = None 
     max_retries = 5
     for attempt in range(max_retries):
@@ -147,34 +155,60 @@ def _perform_analysis(filepath, reason):
     elif reason == "stuck":
         context_prompt = """
                         你現在是一位蘇格拉底式的程式導師。學生似乎卡住了。
-                        請不要直接寫出正確程式碼。
-                        請觀察學生的程式碼邏輯，用 1 個問題引導他發現自己的盲點。
+                        。
+                        請觀察學生的程式碼邏輯，用幾個問題引導他發現自己的盲點。
+                        可以提供程式碼給他提示或參考。
                         """
     else:
         context_prompt = """"
                         學生剛存檔。請快速檢查是否有明顯語法錯誤（如漏掉分號、括號不對稱），以及有無程式邏輯錯誤。
                         每個程式碼第一行會標示此次任務的目標與條件，請務必去對照學生的 code 有無完成條件
                         如果沒有錯誤，請給予簡短肯定。
-                        如果有錯誤，請指出錯誤行數的大概位置，並說明問題所在，盡量用提示的方式。
+                        如果有錯誤，請指出錯誤行數的大概位置(可以說大概在第幾行到第幾行左右)，並說明問題所在，盡量用提示的方式。
                         """
+                        
+    # 🧠 提取歷史記憶
+    if AI_FEEDBACK_HISTORY:
+        history_text = "\n".join(AI_FEEDBACK_HISTORY)
+    else:
+        history_text = "無過去紀錄，這是第一次指導。"
 
-    prompt = f"""
-    你是一個 Arduino 程式碼助教。
-    情境：{context_prompt}
-    
-    --- 學生程式碼 ---
-    {code_content}
-    
-    限制：80字以內，繁體中文，語氣溫柔，給多點情緒價值 。
-    """
+    # 將 Prompt 拆分為 System 與 User 角色
+    messages = [
+        {
+            "role": "system", 
+            "content": f"""你是一個 Arduino 程式碼助教，負責幫助國高中生完成任務，程式碼中都會有要學生填空的地方，請特別注意。
+            情境：{context_prompt}
+
+            [系統記憶 : 你過去幾次給這個學生的引導紀錄] :
+            {history_text}
+
+            請根據上面的記憶與當前程式碼進行判斷。如果學生一直在同一個地方卡關，或是沒有改掉你上次指出的錯誤，請改變引導策略，絕對不要重複一模一樣的建議。
+            80字以內，繁體中文，語氣溫柔，給多點情緒價值。"""
+        },
+        {
+            "role": "user", 
+            "content": f"--- 學生程式碼 ---\n{code_content}"
+        }
+    ]
 
     try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash", 
-            contents=[prompt]
+        response = client.chat.completions.create(
+            model="gpt-5.4", 
+            messages=messages,
+            temperature=0.7
         )
-        advice = response.text
-        print(f"[Gemini Advice ({reason})] {advice}")
+        advice = response.choices[0].message.content
+        print(f"[GPT Advice ({reason})] {advice}")
+        
+        # 將這次的結果存入記憶中
+        current_time = datetime.datetime.now().strftime("%H:%M:%S")
+        memory_entry = f"[{current_time} 狀態:{reason}] 你的建議：{advice}"
+        AI_FEEDBACK_HISTORY.append(memory_entry)
+
+        # 維持記憶長度，超過就刪除最舊的
+        if len(AI_FEEDBACK_HISTORY) > MAX_HISTORY_LENGTH:
+            AI_FEEDBACK_HISTORY.pop(0)
 
         ui_thread = threading.Thread(target=show_custom_messagebox, 
                                      args=("AI 程式小助教", advice))
@@ -182,47 +216,7 @@ def _perform_analysis(filepath, reason):
         ui_thread.start()
 
     except Exception as e:
-        print(f"[Gemini Error] {e}")
-
-
-def analyze_code_with_gemini(filepath):
-    """ 讀取程式碼並呼叫 Gemini """
-    print(f"[Code Monitor] 偵測到變動：{filepath}")
-    
-    # 1. 更新 MMLA 狀態：學生正在寫程式
-    behavior_analysis.update_state("last_code_save_time", time.time())
-    
-    try:
-        with open(filepath, 'r', encoding='utf-8') as f:
-            code_content = f.read()
-
-        prompt = f"""
-        你是一個 Arduino 程式碼助教，協助國高中學生。
-        請針對以下程式碼提供簡短的修正建議或鼓勵。
-        每個程式碼第一行會標示此次任務的目標與條件，請務必去對照學生的 code 有無完成條件
-        注意要仔細檢查程式碼中的錯誤或程式邏輯問題，包括語法錯誤要特別注意。
-        限制：盡量不要超過 8 句，語氣親切，指出關鍵錯誤或給予肯定。
-        
-        --- 學生程式碼 ---
-        {code_content}
-        """
-            
-        response = client.models.generate_content(
-            model="gemini-2.5-flash", 
-            contents=[prompt]
-        )
-        
-        advice = response.text
-        print(f"[Gemini Advice] {advice}")
-
-        # 2. 顯示彈窗 (使用獨立線程避免卡住監控)
-        ui_thread = threading.Thread(target=show_custom_messagebox, 
-                                     args=("AI 程式小助教", advice))
-        ui_thread.daemon = True
-        ui_thread.start()
-
-    except Exception as e:
-        print(f"[Code Monitor Error] 分析失敗: {e}")
+        print(f"[GPT Error] {e}")
 
 class ArduinoHandler(FileSystemEventHandler):
     def on_modified(self, event):
@@ -241,30 +235,50 @@ class ArduinoHandler(FileSystemEventHandler):
             trigger_ai_feedback(reason="save")
             last_processed_time = now
 
-def start_monitoring(path_to_watch):
-    global CURRENT_WATCHING_FILE
+# 🟢 新增：宣告全域的 watchdog 變數，方便我們隨時隨地操控它
+_observer = None
+_watch = None
+_event_handler = None
 
+def set_monitoring_path(new_path):
+    """ 動態切換監控路徑與最新檔案的公開函式 """
+    global _observer, _watch, _event_handler, CURRENT_WATCHING_FILE
+    
+    # 重新掃描新資料夾，尋找最新的 .ino 檔
     all_ino_files = []
-    for root, dirs, files in os.walk(path_to_watch):
+    for root, dirs, files in os.walk(new_path):
         for file in files:
             if file.endswith(".ino"):
-                full_path = os.path.join(root, file)
-                all_ino_files.append(full_path)
+                all_ino_files.append(os.path.join(root, file))
+                
     if all_ino_files:
-        CURRENT_WATCHING_FILE = max(all_ino_files, key=os.path.getmtime) # 取最新修改的 .ino 檔案
-        print(f"[Code Monitor] 啟動監控, 目標路徑: {path_to_watch})")
-        print(f"[Code Monitor] 目前監控的 Arduino 檔案: {CURRENT_WATCHING_FILE}")
+        CURRENT_WATCHING_FILE = max(all_ino_files, key=os.path.getmtime)
+        print(f"[Code Monitor] 🔄 成功切換監控路徑: {new_path}")
+        print(f"[Code Monitor] 🎯 鎖定最新檔案: {CURRENT_WATCHING_FILE}")
     else:
-        print(f"[Code Monitor] 警告：在目標路徑中找不到任何 .ino 檔案: {path_to_watch}")
-        return
+        CURRENT_WATCHING_FILE = None
+        print(f"[Code Monitor] ⚠️ 警告：在新路徑中找不到任何 .ino 檔案: {new_path}")
 
-    event_handler = ArduinoHandler()
-    observer = Observer()
-    observer.schedule(event_handler, path_to_watch, recursive=True)
-    observer.start()
+    # 如果 watchdog 已經在跑，解除舊任務，綁定新任務！
+    if _observer is not None:
+        if _watch is not None:
+            _observer.unschedule(_watch) # 放棄舊資料夾
+        # 綁定新資料夾
+        _watch = _observer.schedule(_event_handler, new_path, recursive=True)
+
+def start_monitoring(path_to_watch):
+    global _observer, _event_handler
+
+    _observer = Observer()
+    _event_handler = ArduinoHandler()
+
+    # 呼叫我們剛剛寫的換軌函式，進行初次設定
+    set_monitoring_path(path_to_watch)
+    _observer.start()
+    
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        observer.stop()
-    observer.join()
+        _observer.stop()
+    _observer.join()

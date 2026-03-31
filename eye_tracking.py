@@ -39,12 +39,19 @@ def eye_gaze_tracking():
 
     LEFT_IRIS_POINTS = [468, 469, 470, 471, 472]
     RIGHT_IRIS_POINTS = [473, 474, 475, 476, 477, 478, 479]  # 如果需要也可用右眼
+
+    window_open = False
     
     while cap.isOpened():
         success, image = cap.read()
         if not success:
             print("Detect eye failed. Please check your camera.")
             break
+
+        # 🟢 新增這段：讀取畫面，但不做 MediaPipe 運算
+        if behavior_analysis.SYSTEM_PAUSED:
+            time.sleep(0.1)
+            continue
 
         start = time.time()
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -103,9 +110,20 @@ def eye_gaze_tracking():
         cv2.putText(image, f"FPS: {fps:.1f}", (10, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
 
-        cv2.imshow('Gaze tracking (mediapipe)', image)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+        # 🟢 核心修改：動態顯示/隱藏視窗邏輯
+        if getattr(behavior_analysis, "SHOW_VIDEO", False):
+            cv2.imshow('Gaze tracking (mediapipe)', image)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+            window_open = True
+        else:
+            if window_open:
+                try:
+                    cv2.destroyWindow('Gaze tracking (mediapipe)')
+                except Exception:
+                    pass
+                window_open = False
+            cv2.waitKey(1)
 
     cap.release()
     cv2.destroyAllWindows()

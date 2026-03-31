@@ -1,3 +1,5 @@
+from time import time, sleep
+
 from ultralytics import YOLO
 import cv2
 import behavior_analysis
@@ -25,17 +27,22 @@ def is_collision(boxA, boxB):
 def image_detection():
     global frame_count
     global previous_results
-
+    window_open = False # 紀錄視窗目前的開關狀態
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             break
+        
+    # 🟢 新增這段：讀取畫面清空 Buffer，但不做 YOLO 運算
+        if behavior_analysis.SYSTEM_PAUSED:
+            sleep(0.1)
+            continue
 
         frame_count += 1
         # every frame_skip frames do prediction
         if frame_count % frame_skip == 0:
             # predict return results list; we only process the first result
-            results = model.predict(frame, imgsz=640, conf=0.7, verbose=False)[0]
+            results = model.predict(frame, imgsz=640, conf=0.6, verbose=False)[0]
             previous_results = results
         
         hand_contact_status = "Idle" # define is idle
@@ -84,10 +91,22 @@ def image_detection():
         cv2.putText(frame, f"Status: {status_text}", (10, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8,
                     (0, 255, 0) if learning else (0, 0, 255), 2)
-
-        cv2.imshow("YOLO11n Collision Learning", frame)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+        
+        # 🟢 核心修改：動態顯示/隱藏視窗邏輯
+        if getattr(behavior_analysis, "SHOW_VIDEO", False):
+            cv2.imshow("YOLO11n Collision Learning", frame)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+            window_open = True
+        else:
+            if window_open:
+                try:
+                    cv2.destroyWindow("YOLO11n Collision Learning")
+                except Exception:
+                    pass
+                window_open = False
+            # 隱藏時依然需要微小的等待，避免吃光 CPU
+            cv2.waitKey(1)
 
     cap.release()
     cv2.destroyAllWindows()
