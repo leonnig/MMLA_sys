@@ -1,24 +1,37 @@
 # Multimodal Learning Monitoring and Analytics System (MMLA)
 
-This project is a prototype system for real-time multimodal learning behavior monitoring. It integrates eye-tracking (via MediaPipe), image detection, speech recognition, keyboard and mouse activity tracking to provide a comprehensive dashboard for analyzing learner engagement and interactions.
+This project is a prototype system for real-time multimodal learning behavior analysis and timely intervention, designed specifically for K-12 STEM and Arduino programming education.
+
+Grounded in the **ICAP framework** (Interactive, Constructive, Active, Passive), the system integrates computer vision, speech recognition, and OS-level activity tracking to diagnose student engagement. When a learner is detected as "stuck" or asks for help, a Generative AI virtual assistant provides context-aware, Socratic feedback to guide them without causing cognitive overload.
 
 ## Features
-Real-time eye gaze estimation using MediaPipe Face Mesh
+- Gaze Tracking: Real-time eye tracking via MediaPipe Face Mesh.
 
-Object detection using yolo11 do image recognition
+- Object & Hand Detection: Custom YOLOv11 model detecting interactions between hands, Arduino, breadboards, and laptops.
 
-Keyboard and mouse activity logging
+- Speech Intent Recognition: Detects keywords to classify "Help Seeking" or "Peer Discussion" intents.
 
-Speech keyword detection and recognition
+- Peripheral Tracking: Keyboard and mouse activity logging.
 
-Modular design facilitates multi-device and multi-user scalability
+- IDE Code Monitoring: Watchdog integration to track .ino file saves dynamically.
+
+**ICAP Behavior Analysis:** Accurately classifies learning states (e.g., Constructive: Testing & Debugging, Passive: Viewing Code) with State Smoothing (Anti-Jitter) mechanisms to ensure robust data collection.
+
+**GenAI Virtual Teaching Assistant:** Powered by OpenAI (gpt-5.4). It features Context Memory Tracking to avoid repetitive advice and provides targeted, empathetic hints based on the student's exact code state and multimodal context.
+
+**Cloud Integration:** Automatically packages and uploads behavior logs (CSV) to Google Cloud Storage (GCS) upon secure system exit.
 
 ## Installation
 - Clone the repository
+
+```shell
+git clone https://github.com/yourusername/MMLA_sys.git
+cd MMLA_sys
+```
 - Set up a Python virtual environment
 
 ```shell
-py -3.11 -m venv my_venv
+py -3.11 -m venv mmla
 ```
 
 - Activate virtual environment
@@ -30,7 +43,7 @@ py -3.11 -m venv my_venv
 - Install required packages via
 
 ```shell
-pip install -r requirements.txt
+pip install -r requirement.txt
 ```
 
 - Install torch
@@ -57,29 +70,48 @@ pip install google-cloud-storage
 pip install plyer
 ```
 
-- Install google-genai and watchdog package
+- Install openai and watchdog package
 
 ```shell
-pip install google-genai watchdog
+pip install openai watchdog
 ```
 
-Connect your webcam(you need two) for eye tracking and image detecting
+## Hardware Requirements:
 
-Run the main detection scripts and launch the Flask dashboard
+- Two webcams (one for facial/gaze tracking, one for desk/hand/Arduino tracking).
+
+- Microphone for speech recognition.
+
+## API Key Configuration:
+
+For security reasons, never hardcode your API keys. Create a .env file in the root directory and add your OpenAI API key:
+
+```shell
+OPENAI_API_KEY=sk-proj-your-actual-api-key-here
+```
+(Ensure .env is added to your .gitignore file to prevent accidental pushes to GitHub).
+
+## Google Cloud Storage Credentials:
+Place your GCS service account key (gcp-credentials.json) in the root directory to enable cloud logging.
 
 ## Usage
 
-Run mmla.py to start multimodal data collection
+1. Run mmla.py to start multimodal data collection
 
 ```python
 python mmla.py
 ```
 
-Launch the Flask web server using python app.py
+2. Using the Dashboard:
+- *Student ID & Path:* Enter the Student ID and browse for the target Arduino .ino project folder.
 
-Access the dashboard at http://localhost:5000
+- *Start/Pause/Resume:* Use the UI buttons to control the monitoring state. The system features a dynamic watchdog that tracks the folder seamlessly even after pausing and switching paths.
 
-Use the dashboard to monitor live learner behavior and data
+- *Toggle Video:* Check the "Show Camera Feeds" box to open OpenCV windows for debugging (Note: unchecking this hides the windows but keeps the AI running in the background to save CPU/GPU resources).
+
+- *Safe Exit:* Click "End System" or close the window to safely stop all daemon threads and trigger the automatic GCS log upload.
+
+![image]()
 
 ## Contributing
 Contributions and integrations of additional modalities are welcome. Please open issues or pull requests for improvements or bug fixes.
