@@ -111,7 +111,6 @@ python mmla.py
 
 - *Safe Exit:* Click "End System" or close the window to safely stop all daemon threads and trigger the automatic GCS log upload.
 
-![image]()
 
 ## Contributing
 Contributions and integrations of additional modalities are welcome. Please open issues or pull requests for improvements or bug fixes.
