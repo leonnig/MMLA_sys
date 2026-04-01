@@ -12,7 +12,7 @@ API_KEY = ""
 client = openai.OpenAI(api_key=API_KEY)
 
 GLOBAL_LAST_CALL_TIME = 0       # 記錄上一次呼叫的時間
-SAFE_INTERVAL = 180             # 設定冷卻時間 180 秒 (3分鐘)，保護您的 20 次額度
+SAFE_INTERVAL = 180             # 設定冷卻時間 180 秒 (3分鐘)
 
 CURRENT_WATCHING_FILE = None 
 
