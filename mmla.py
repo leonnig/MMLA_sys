@@ -18,7 +18,7 @@ class MMLADashboard:
     def __init__(self, root):
         self.root = root
         self.root.title("MMLA 多模態學習分析 - 控制面板")
-        self.root.geometry("450x280")
+        self.root.geometry("450x320")
         self.root.attributes('-topmost', True) # 讓控制面板保持在最上層
 
         # 變數設定
@@ -62,6 +62,9 @@ class MMLADashboard:
         self.btn_stop = tk.Button(btn_frame, text="⏹ 結束系統", bg="#f8d7da", width=12, command=self.quit_system)
         self.btn_stop.pack(side=tk.LEFT, padx=10)
 
+        self.icap_var = tk.StringVar(value="當前狀態: 待命中")
+        tk.Label(self.root, textvariable=self.icap_var, font=("Arial", 12, "bold"), fg="#0056b3").grid(row=4, column=0, columnspan=3, pady=10)
+
     # 當打勾狀態改變時，即時更新全域變數
     def toggle_video_display(self):
         behavior_analysis.SHOW_VIDEO = self.show_video_var.get()
@@ -98,6 +101,8 @@ class MMLADashboard:
             for t in threads:
                 t.start()
             print("所有模組已成功啟動！")
+
+            self.update_status_ui()
         else:
             print("系統已恢復偵測！")
             behavior_analysis.behaviour_log.append((time.time(), "System: Resumed"))
@@ -107,6 +112,15 @@ class MMLADashboard:
         # 更新按鈕狀態
         self.btn_start.config(state=tk.DISABLED)
         self.btn_pause.config(state=tk.NORMAL)
+    
+    def update_status_ui(self):
+        """ 每隔 1 秒自動更新一次介面上的 ICAP 狀態 """
+        if self.is_running:
+            state = behavior_analysis.current_behavior
+            self.icap_var.set(f"當前 ICAP 狀態: {state}")
+        
+        # 設定 1000 毫秒 (1秒) 後再次執行自己，形成自動更新迴圈
+        self.root.after(1000, self.update_status_ui)
 
     def pause_system(self):
         behavior_analysis.SYSTEM_PAUSED = True

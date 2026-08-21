@@ -87,10 +87,10 @@ def image_detection():
                 cv2.putText(frame, label, (x1, y1 - 10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
-        status_text = "Experimenting" if learning else "Idle"
-        cv2.putText(frame, f"Status: {status_text}", (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8,
-                    (0, 255, 0) if learning else (0, 0, 255), 2)
+        # status_text = "Experimenting" if learning else "Idle"
+        # cv2.putText(frame, f"Status: {status_text}", (10, 30),
+        #             cv2.FONT_HERSHEY_SIMPLEX, 0.8,
+        #             (0, 255, 0) if learning else (0, 0, 255), 2)
         
         # 🟢 核心修改：動態顯示/隱藏視窗邏輯
         if getattr(behavior_analysis, "SHOW_VIDEO", False):

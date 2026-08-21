@@ -17,6 +17,9 @@ SYSTEM_PAUSED = False
 # 控制是否顯示 OpenCV 畫面的開關 (預設為不顯示，節省效能)
 SHOW_VIDEO = False
 
+# 新增全域變數，供 UI 讀取當前狀態
+current_behavior = "待命中"
+
 # 維護學習者當前的多模態即時狀態
 current_state = {
     "gaze": "Center",           # 初始值: "Left", "Center", "Right"
@@ -72,6 +75,9 @@ STUCK_THRESHOLD = 15 # if Viewing Code in 60s
 AI_COOLDOWN = 20    # AI cooldown time 
 
 last_ai_trigger_time = 0
+last_active_writing_trigger = 0
+last_active_exp_trigger = 0
+ACTIVE_AI_COOLDOWN = 180
 
 # 用於「平滑化」追蹤卡關狀態的計時器
 stuck_start_time = None  
@@ -161,12 +167,16 @@ def analyze_and_send_behavior():
     """
     global last_analysis_time, last_behavior_state, behavior_state_time, last_ai_trigger_time
     global stuck_start_time, noise_start_time
+    global current_behavior
+    
+    global last_active_writing_trigger, last_active_exp_trigger, ACTIVE_AI_COOLDOWN
     
     while True:
         time.sleep(2) # 每 2 秒分析一次當前狀態
 
         # 🟢 新增：如果系統暫停，就不做任何行為判定與計時
         if SYSTEM_PAUSED:
+            current_behavior = "系統暫停中"
             continue
 
         now = time.time()
@@ -231,6 +241,8 @@ def analyze_and_send_behavior():
         elif is_off_task:
             behavior = "Passive: Off-task"
 
+        current_behavior = behavior
+
         if behavior != "Unknown":
             behaviour_log.append((now, behavior))
             print(f"[Behavior Analysis] - Detected: {behavior} (Gaze: {state['gaze']}, Hand: {state['hand_contact']}, KB: {state['keyboard_active']})")
@@ -274,15 +286,34 @@ def analyze_and_send_behavior():
                 # 仍在保護期內，安靜地跳過，不觸發 AI
                 pass
             elif now - last_ai_trigger_time > AI_COOLDOWN:
-                print(f"\n[Behavior Trigger] 學生處於被動狀態已超過 {duration:.0f} 秒 (包含容錯)，判定為卡關或分心。")
+                # 依當前狀態分流：脫離任務 -> 再投入提示；盯著程式碼不動 -> 卡關引導
+                trigger_reason = "off_task" if behavior == "Passive: Off-task" else "stuck"
+                print(f"\n[Behavior Trigger] 學生處於被動狀態已超過 {duration:.0f} 秒 (包含容錯)，判定為 {trigger_reason}。")
                 print("[Behavior Trigger] 呼叫 code_monitor 啟動 AI 輔助...")
                 try:
-                    code_monitor.trigger_ai_feedback(reason="stuck")
+                    code_monitor.trigger_ai_feedback(reason=trigger_reason)
                     last_ai_trigger_time = now
                     # 觸發後重置計時器，準備下一輪判定
                     stuck_start_time = now 
                 except Exception as e:
                     print(f"[Behavior Trigger] 呼叫 AI 輔助失敗: {e}")
+        # 2. 處理主動撰寫程式碼 (新增邏輯)
+        if behavior == "Active: Writing Code":
+            if now - last_active_writing_trigger > ACTIVE_AI_COOLDOWN:
+                try:
+                    code_monitor.trigger_ai_feedback(reason="writing")
+                    last_active_writing_trigger = now
+                except Exception as e:
+                    pass
+
+        # 3. 處理進行硬體實驗 (新增邏輯)
+        if behavior == "Active: Experimenting":
+             if now - last_active_exp_trigger > ACTIVE_AI_COOLDOWN:
+                try:
+                    code_monitor.trigger_ai_feedback(reason="experimenting")
+                    last_active_exp_trigger = now
+                except Exception as e:
+                    pass
 
         # --- 以下為定期印出最高頻率行為的邏輯 ---
         if now - last_analysis_time >= ANALYSIS_INTERVAL:
